@@ -6,73 +6,73 @@ let state = 0;
 let isChoirStarted = false;
 
 function setup() {
-  // 讓畫布佔滿全螢幕
   createCanvas(windowWidth, windowHeight);
-
   background(200);
   textAlign(CENTER, CENTER);
   textSize(24);
-  text('iPhone Test:\nTap to START', width / 2, height / 2);
+  text('iPhone Test:\nTap to START Mic', width / 2, height / 2);
 
-  // 初始化錄音組件
   mic = new p5.AudioIn();
   recorder = new p5.SoundRecorder();
   recorder.setInput(mic);
   soundFile = new p5.SoundFile();
 }
 
-function draw() {
-  // 暫時不寫任何東西，確保 draw 迴圈不卡死
-}
-
 function touchStarted() {
+  // 1. 每次點擊都強制 resume，解決 Chrome/Safari 的鎖定
   userStartAudio();
 
+  // 2. 第一階段：啟動麥克風
   if (!isChoirStarted) {
-    mic.start();
-    isChoirStarted = true;
-    background(0, 255, 0); // 變綠色
-    text('Mic Initializing...\nWait 1 sec then Tap again', width / 2, height / 2);
+    mic.start(() => {
+      // 成功回調：這在 iOS 很重要，確保權限拿到了才改狀態
+      isChoirStarted = true;
+      state = 0; // 重置到準備錄音狀態
+      background(0, 255, 0);
+      text('Mic Ready!\nTap to RECORD', width / 2, height / 2);
+    }, () => {
+      // 失敗回調
+      background(255, 0, 0);
+      text('Mic Denied!\nCheck browser settings', width / 2, height / 2);
+    });
+
+    background(100);
+    text('Requesting Mic...', width / 2, height / 2);
     return false;
   }
 
-  // 關鍵修正：加入一個檢查，如果 mic 還沒準備好，強制再啟動一次
-  if (!mic.enabled) {
-    mic.start();
-    background(255, 165, 0); // 變成橘色代表還在嘗試啟動麥克風
-    text('Mic not ready yet\nCheck if you allowed Mic access', width / 2, height / 2);
-    return false;
+  // 3. 錄音狀態機 (只有在 mic 成功啟動後才執行)
+  if (isChoirStarted) {
+    if (state === 0) {
+      // 開始錄音
+      recorder.record(soundFile);
+      state = 1;
+      background(255, 0, 0);
+      fill(255);
+      text('RECORDING...', width / 2, height / 2);
+    }
+    else if (state === 1) {
+      // 停止錄音
+      recorder.stop();
+      state = 2;
+      background(255, 255, 0);
+      fill(0);
+      text('DONE!\nTap to UPLOAD', width / 2, height / 2);
+    }
+    else if (state === 2) {
+      // 執行上傳邏輯
+      handleUpload();
+    }
   }
 
-  // 錄音狀態機
-  if (state === 0) { // 移除 mic.enabled 判斷，因為上面已經檢查過了
-    recorder.record(soundFile);
-    state = 1;
-    background(255, 0, 0);
-    text('RECORDING...', width / 2, height / 2);
-  }
-  else if (state === 1) {
-    recorder.stop();
-    state = 2;
-    background(255, 255, 0);
-    text('DONE!\nTap to UPLOAD', width / 2, height / 2);
-  }
-  // ... 後續上傳邏輯不變
   return false;
 }
 
-async function startExperience() {
-  // iPhone 需要在 HTTPS 下執行這個
-  await userStartAudio();
+function handleUpload() {
+  background(100);
+  fill(255);
+  text('UPLOADING...', width / 2, height / 2);
 
-  mic.start(() => {
-    // 成功回調
-    isChoirStarted = true;
-    startBtn.remove();
-    background(0, 255, 0);
-    text('Mic Active! Tap to Record', width / 2, height / 2);
-  }, () => {
-    // 失敗回調
-    alert("請確保已在瀏覽器設定中允許麥克風存取");
-  });
+  // 這裡放你原本的 socket.emit 或 fetch 邏輯
+  console.log("Uploading sound file...");
 }
