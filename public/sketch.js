@@ -1,78 +1,90 @@
 /*eslint no-undef: 0*/
-
 const socket = io();
 let mic, recorder, soundFile;
 let state = 0;
 let isChoirStarted = false;
+let allVoices = []; // 存放所有已載入的聲音物件
+let statusMsg = 'Tap to START Mic';
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
-  background(200);
   textAlign(CENTER, CENTER);
-  textSize(24);
-  text('iPhone Test:\nTap to START Mic', width / 2, height / 2);
 
   mic = new p5.AudioIn();
   recorder = new p5.SoundRecorder();
   recorder.setInput(mic);
   soundFile = new p5.SoundFile();
+
+  // 接收初始清單
+  socket.on("init-audio-list", (urls) => {
+    urls.forEach(url => loadAndAddVoice(url));
+  });
+
+  // 接收新聲音
+  socket.on("new-voice", (data) => {
+    loadAndAddVoice(data.url);
+  });
+
+  socket.on('upload-success', () => {
+    state = 0;
+    statusMsg = 'Upload Success! Record another?';
+  });
+}
+
+function loadAndAddVoice(url) {
+  loadSound(url, (s) => {
+    allVoices.push(s);
+  });
+}
+
+function draw() {
+  background(state === 1 ? [255, 0, 0] : 220); // 錄音時變紅
+
+  // 顯示資訊
+  fill(0);
+  textSize(20);
+  text(`Total Voices: ${allVoices.length}`, width / 2, 40);
+
+  textSize(28);
+  text(statusMsg, width / 2, height / 2 - 50);
+
+  // 繪製「播放全部」按鈕區域
+  fill(0, 150, 255);
+  rectMode(CENTER);
+  rect(width / 2, height - 100, 200, 60, 10);
+  fill(255);
+  textSize(22);
+  text("PLAY ALL", width / 2, height - 100);
 }
 
 function touchStarted() {
-  // 1. 每次點擊都強制 resume，解決 Chrome/Safari 的鎖定
   userStartAudio();
 
-  // 2. 第一階段：啟動麥克風
-  if (!isChoirStarted) {
-    mic.start(() => {
-      // 成功回調：這在 iOS 很重要，確保權限拿到了才改狀態
-      isChoirStarted = true;
-      state = 0; // 重置到準備錄音狀態
-      background(0, 255, 0);
-      text('Mic Ready!\nTap to RECORD', width / 2, height / 2);
-    }, () => {
-      // 失敗回調
-      background(255, 0, 0);
-      text('Mic Denied!\nCheck browser settings', width / 2, height / 2);
-    });
-
-    background(100);
-    text('Requesting Mic...', width / 2, height / 2);
+  // 判斷是否點擊到下方的 PLAY ALL 按鈕
+  if (mouseY > height - 130 && mouseY < height - 70 && mouseX > width / 2 - 100 && mouseX < width / 2 + 100) {
+    allVoices.forEach(v => { if (v.isLoaded()) v.play(); });
     return false;
   }
 
-  // 3. 錄音狀態機 (只有在 mic 成功啟動後才執行)
-  if (isChoirStarted) {
-    if (state === 0) {
-      // 開始錄音
-      recorder.record(soundFile);
-      state = 1;
-      background(255, 0, 0);
-      fill(255);
-      text('RECORDING...', width / 2, height / 2);
-    }
-    else if (state === 1) {
-      // 停止錄音
-      recorder.stop();
-      state = 2;
-      background(255, 255, 0);
-      fill(0);
-      text('DONE!\nTap to UPLOAD', width / 2, height / 2);
-    }
-    else if (state === 2) {
-      // 執行上傳邏輯
-      handleUpload();
-    }
+  // 麥克風初始化
+  if (!isChoirStarted) {
+    mic.start(() => { isChoirStarted = true; statusMsg = 'Mic Ready!\nTap to RECORD'; });
+    return false;
   }
 
+  // 錄音邏輯
+  if (state === 0) {
+    soundFile = new p5.SoundFile();
+    recorder.record(soundFile);
+    state = 1;
+    statusMsg = 'RECORDING...';
+  } else if (state === 1) {
+    recorder.stop();
+    state = 2;
+    statusMsg = 'DONE!\nTap to UPLOAD';
+  } else if (state === 2) {
+    statusMsg = 'UPLOADING...';
+    socket.emit('upload-audio', { audio: soundFile.getBlob() });
+  }
   return false;
-}
-
-function handleUpload() {
-  background(100);
-  fill(255);
-  text('UPLOADING...', width / 2, height / 2);
-
-  // 這裡放你原本的 socket.emit 或 fetch 邏輯
-  console.log("Uploading sound file...");
 }
