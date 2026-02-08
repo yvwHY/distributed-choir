@@ -5,7 +5,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import fs from "fs";
 
-// 1. 基本路徑與環境設定
+// 1. Basic paths and environment setup
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 3000;
@@ -16,8 +16,8 @@ const io = new Server(httpServer, {
     cors: { origin: "*" }
 });
 
-// 2. 自動建立目錄架構
-// 確保 public 與 public/uploads 資料夾存在，避免儲存時報錯
+// 2. Automated directory structure creation
+// Ensure 'public' and 'public/uploads' exist to prevent errors during saving
 const publicDir = path.join(__dirname, "public");
 const uploadDir = path.join(publicDir, "uploads");
 
@@ -28,34 +28,34 @@ const uploadDir = path.join(publicDir, "uploads");
     }
 });
 
-// 靜態檔案服務：讓瀏覽器可以透過網址讀取 .wav 檔案
+// Static file service: Allows browsers to access .wav files via URL
 app.use(express.static(publicDir));
 
-// 3. 全域變數：儲存目前所有已錄製聲音的網址清單
+// 3. Global variable: Stores the list of all recorded audio URLs
 let audioFiles = [];
 
-// 4. Socket.io 核心邏輯
+// 4. Socket.io core logic
 io.on("connection", (socket) => {
     console.log(`[Connection] User connected: ${socket.id}`);
 
-    // 【初始化】當新使用者連線時，立刻傳送目前的聲音清單給他
+    // [Initialization] Send current audio list to user immediately upon connection
     socket.emit("init-audio-list", audioFiles);
 
-    // 【接收錄音】監聽前端傳來的錄音資料 (Blob/Buffer)
+    // [Audio Upload] Listen for incoming audio data (Blob/Buffer) from the frontend
     socket.on("upload-audio", (data) => {
         if (!data || !data.audio) {
-            console.error("無效的音訊數據");
+            console.error("Invalid audio data received");
             return;
         }
 
-        // 使用時間戳與 Socket ID 生成唯一檔名
+        // Generate a unique filename using timestamp and socket ID
         const fileName = `voice-${Date.now()}-${socket.id.substring(0, 4)}.wav`;
         const filePath = path.join(uploadDir, fileName);
 
-        // 將二進位資料寫入實體檔案
+        // Write binary data to a physical .wav file on the server
         fs.writeFile(filePath, data.audio, (err) => {
             if (err) {
-                console.error("儲存失敗:", err);
+                console.error("Storage failed:", err);
                 socket.emit("upload-error");
                 return;
             }
@@ -63,13 +63,13 @@ io.on("connection", (socket) => {
             const fileUrl = `/uploads/${fileName}`;
             console.log(`[File Saved] ${fileName} by ${socket.id}`);
 
-            // 將新聲音加入清單
+            // Add new audio URL to the global list
             audioFiles.push(fileUrl);
 
-            // A. 回傳成功給發送者
+            // A. Notify the sender that the upload was successful
             socket.emit("upload-success", { url: fileUrl });
 
-            // B. 即時廣播給所有人（包含自己）：有一個新聲音可以載入了
+            // B. Broadcast to ALL users (including sender) to load the new voice
             io.emit("new-voice", {
                 url: fileUrl,
                 id: socket.id,
@@ -78,13 +78,13 @@ io.on("connection", (socket) => {
         });
     });
 
-    // 【中斷連線】
+    // [Disconnection]
     socket.on("disconnect", () => {
         console.log(`[Disconnect] User disconnected: ${socket.id}`);
     });
 });
 
-// 5. 啟動伺服器
+// 5. Start Server
 httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`=========================================`);
     console.log(`  Distributed Choir Server is running!`);

@@ -7,21 +7,33 @@ let allVoices = [];
 let balls = [];
 let statusMsg = 'Tap to START Mic';
 
+// Collaborative prompts to encourage users
+let hints = [
+  "Record more sounds to enrich the choir!",
+  "Invite friends nearby to join the recording.",
+  "Each ball represents a unique soul's voice.",
+  "Layer different tones to create a collaborative space.",
+  "The more voices, the more vibrant the physics world!"
+];
+let currentHint = "";
+let lastHintTime = 0;
+
 function setup() {
   createCanvas(windowWidth, windowHeight);
   textAlign(CENTER, CENTER);
+  currentHint = random(hints);
 
-  // 初始化音訊組件
   mic = new p5.AudioIn();
   recorder = new p5.SoundRecorder();
   recorder.setInput(mic);
   soundFile = new p5.SoundFile();
 
-  // 同步邏輯：接收初始與即時聲音
+  // Sync: Fetch existing history on connection
   socket.on("init-audio-list", (urls) => {
     urls.forEach(url => loadAndAddVoice(url));
   });
 
+  // Sync: Receive new uploads from others in real-time
   socket.on("new-voice", (data) => {
     loadAndAddVoice(data.url);
   });
@@ -32,15 +44,13 @@ function setup() {
   });
 }
 
-// --- 播放端強化：載入聲音並強制放大音量 ---
+// Amplification Logic: Boosting volume for mobile hardware limits
 function loadAndAddVoice(url) {
   loadSound(url, (s) => {
-    // 【修改點】將播放音量拉高到 4.0 到 5.0 倍。
-    // 這是在手機端小聲錄音下，最有效的「軟體放大」手段。
+    // Boosting playback volume to 5.0 to compensate for quiet mobile mics
     s.setVolume(5.0);
     allVoices.push(s);
-
-    // 每增加一個聲音，產生一顆物理球
+    // Create a physics ball for the new voice
     balls.push(new Ball(random(width), -50, random(15, 30)));
   });
 }
@@ -48,7 +58,13 @@ function loadAndAddVoice(url) {
 function draw() {
   background(state === 1 ? [255, 0, 0] : 220);
 
-  // 更新與顯示物理球體
+  // Update Hint every 5 seconds
+  if (millis() - lastHintTime > 5000) {
+    currentHint = random(hints);
+    lastHintTime = millis();
+  }
+
+  // Update and Display Physics Balls
   for (let b of balls) {
     b.update();
     b.checkEdges();
@@ -56,24 +72,32 @@ function draw() {
     b.display();
   }
 
-  // --- 錄音端視覺化：顯示即時輸入音量 ---
+  // UI Elements
+  fill(0);
+  noStroke();
+
+  // Display Prompt
+  textSize(16);
+  fill(100);
+  text(currentHint, width / 2, 25);
+
+  // Stats
+  fill(0);
+  textSize(20);
+  text(`Voices in Choir: ${allVoices.length}`, width / 2, 60);
+
+  textSize(28);
+  text(statusMsg, width / 2, height / 2 - 50);
+
+  // Recording Volume Visualizer
   if (state === 1) {
     let level = mic.getLevel();
     let h = map(level, 0, 0.5, 0, height);
     fill(255, 255, 0, 150);
-    noStroke();
-    rect(0, height, 30, -h); // 左側黃色能量條
+    rect(0, height, 30, -h);
   }
 
-  // UI 介面
-  fill(0);
-  noStroke();
-  textSize(20);
-  text(`Voices in Choir: ${allVoices.length}`, width / 2, 40);
-  textSize(28);
-  text(statusMsg, width / 2, height / 2 - 50);
-
-  // PLAY ALL 按鈕
+  // Play All Button
   fill(0, 150, 255);
   rectMode(CENTER);
   rect(width / 2, height - 100, 240, 70, 15);
@@ -81,29 +105,27 @@ function draw() {
   text("PLAY CHOIR", width / 2, height - 100);
 }
 
-// --- 互動邏輯 ---
 function touchStarted() {
   userStartAudio();
 
-  // 1. 點擊播放按鈕
+  // 1. Play Button Logic
   if (mouseY > height - 135 && mouseY < height - 65 && mouseX > width / 2 - 120 && mouseX < width / 2 + 120) {
     allVoices.forEach(v => {
       if (v.isLoaded()) {
-        v.setVolume(5.0); // 確保播放時音量是極大化的
+        v.setVolume(5.0);
         v.play();
       }
     });
-    // 視覺回饋：播放時讓球體向上跳動
+    // Visual feedback: Balls jump on play
     for (let b of balls) { b.vel.y -= random(5, 10); }
     return false;
   }
 
-  // 2. 麥克風初始化
+  // 2. Mic Initialization
   if (!isChoirStarted) {
     mic.start(() => {
       isChoirStarted = true;
-      // 【修改點】確保麥克風捕捉增益為最大值 1.0
-      mic.amp(1.0);
+      mic.amp(1.0); // Maximize input gain
       statusMsg = 'Mic Active!\nTap to RECORD';
     }, () => {
       statusMsg = 'Mic Denied!';
@@ -112,7 +134,7 @@ function touchStarted() {
     return false;
   }
 
-  // 3. 錄音狀態機
+  // 3. Recording State Machine
   if (isChoirStarted) {
     if (state === 0) {
       soundFile = new p5.SoundFile();
@@ -131,12 +153,12 @@ function touchStarted() {
   return false;
 }
 
-// --- Nature of Code: 物理球體類別 ---
+// Nature of Code: Ball Class
 class Ball {
   constructor(x, y, r) {
     this.pos = createVector(x, y);
     this.vel = createVector(random(-1, 1), random(2, 5));
-    this.acc = createVector(0, 0.25); // 重力
+    this.acc = createVector(0, 0.25); // Gravity
     this.r = r;
     this.color = color(random(255), random(255), random(255), 180);
   }
@@ -154,7 +176,7 @@ class Ball {
   checkEdges() {
     if (this.pos.y > height - this.r) {
       this.pos.y = height - this.r;
-      this.vel.y *= -0.6; // 彈跳衰減
+      this.vel.y *= -0.6; // Bounciness
     }
     if (this.pos.x > width - this.r || this.pos.x < this.r) {
       this.vel.x *= -0.8;
