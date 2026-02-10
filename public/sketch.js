@@ -105,6 +105,22 @@ function draw() {
   text("PLAY CHOIR", width / 2, height - 100);
 }
 
+function handleUpload() {
+  statusMsg = 'UPLOADING...';
+  let soundBlob = soundFile.getBlob();
+
+  // 建立一個安全機制：如果 10 秒內沒收到 upload-success，強制重置狀態
+  setTimeout(() => {
+    if (state === 2 && statusMsg === 'UPLOADING...') {
+      state = 0;
+      statusMsg = 'Upload Timeout. Please try again.';
+      console.log("Upload timed out.");
+    }
+  }, 10000);
+
+  socket.emit('upload-audio', { audio: soundBlob });
+}
+
 function touchStarted() {
   userStartAudio();
 

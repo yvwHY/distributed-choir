@@ -12,12 +12,21 @@ const PORT = process.env.PORT || 3000;
 
 const app = express();
 const httpServer = createServer(app);
+
+// Updated Server Config: Fixed the "stuck on upload" issue by increasing buffer size
 const io = new Server(httpServer, {
-    cors: { origin: "*" }
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    },
+    // Increase limit to 10MB to handle high-quality .wav files from mobile
+    maxHttpBufferSize: 1e7,
+    // Extend timeouts for more stable connections on external networks
+    pingTimeout: 60000,
+    pingInterval: 25000
 });
 
 // 2. Automated directory structure creation
-// Ensure 'public' and 'public/uploads' exist to prevent errors during saving
 const publicDir = path.join(__dirname, "public");
 const uploadDir = path.join(publicDir, "uploads");
 
@@ -28,7 +37,6 @@ const uploadDir = path.join(publicDir, "uploads");
     }
 });
 
-// Static file service: Allows browsers to access .wav files via URL
 app.use(express.static(publicDir));
 
 // 3. Global variable: Stores the list of all recorded audio URLs
@@ -38,21 +46,18 @@ let audioFiles = [];
 io.on("connection", (socket) => {
     console.log(`[Connection] User connected: ${socket.id}`);
 
-    // [Initialization] Send current audio list to user immediately upon connection
+    // [Initialization] Sync history for the new user
     socket.emit("init-audio-list", audioFiles);
 
-    // [Audio Upload] Listen for incoming audio data (Blob/Buffer) from the frontend
     socket.on("upload-audio", (data) => {
         if (!data || !data.audio) {
             console.error("Invalid audio data received");
             return;
         }
 
-        // Generate a unique filename using timestamp and socket ID
         const fileName = `voice-${Date.now()}-${socket.id.substring(0, 4)}.wav`;
         const filePath = path.join(uploadDir, fileName);
 
-        // Write binary data to a physical .wav file on the server
         fs.writeFile(filePath, data.audio, (err) => {
             if (err) {
                 console.error("Storage failed:", err);
@@ -63,13 +68,12 @@ io.on("connection", (socket) => {
             const fileUrl = `/uploads/${fileName}`;
             console.log(`[File Saved] ${fileName} by ${socket.id}`);
 
-            // Add new audio URL to the global list
             audioFiles.push(fileUrl);
 
-            // A. Notify the sender that the upload was successful
+            // A. Confirm success to sender
             socket.emit("upload-success", { url: fileUrl });
 
-            // B. Broadcast to ALL users (including sender) to load the new voice
+            // B. Sync the new ball/voice to EVERYONE else in real-time
             io.emit("new-voice", {
                 url: fileUrl,
                 id: socket.id,
@@ -78,7 +82,6 @@ io.on("connection", (socket) => {
         });
     });
 
-    // [Disconnection]
     socket.on("disconnect", () => {
         console.log(`[Disconnect] User disconnected: ${socket.id}`);
     });
